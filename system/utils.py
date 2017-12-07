@@ -9,7 +9,6 @@ import socket
 from threading import Thread
 from time import sleep
 
-from pip._vendor.distlib import database
 import psycopg2
 import urllib3
 
@@ -23,7 +22,7 @@ def chat(sock, msg):
     sock -- the socket over which to send the message
     msg -- the message to be sent
     """
-    sock.send("PRIVMSG {} :{}".format(cfg.CHAN, msg).encode('utf-8'))
+    sock.send("PRIVMSG {} :{}\r\n".format(cfg.CHAN, msg).encode('utf-8'))
 
 def ban(sock, user):
     """
@@ -110,6 +109,25 @@ def addUser(username, userType):
     cursor.close()
     conn.close()
 
+def getUserType(username):
+    """
+    Gets the type of a user for permission purposes
+    username -- The name of the user in question
+    """
+    try:
+        cursor, conn = databaseConnect()
+        SQL = "SELECT (usertype) FROM users WHERE username = %s;"
+        data = (username,)
+        cursor.execute(SQL, data)
+        conn.commit()
+        response = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return response[0]
+    except Exception as e:
+        log(message="Problem encountered while user type from the database: " + str(e), idNum=9)
+    
+
 def autoPebblerUpdater():
     """
     Automatically updates every user in the database that's viewing the stream every 10 minutes
@@ -163,24 +181,29 @@ def addPebbles(numPebbles, username=None):
         cursor.close()
         conn.close()
 
-def addCommand(sock, command, response):
+def addCommand(sock, command, response, username):
     """
     Adds a custom command to the bot. Acts like a quote echo
     command -- The phrase to trigger the command
     response -- The string containing the response the bot will send
     """
-    if command is not None and response is not None:
-        cursor, conn = databaseConnect()
-        SQL = "INSERT INTO commands VALUES (%s, %s);"
-        data = (command, response)
-        cursor.execute(SQL, data)
-        conn.commit()
-        cursor.close()
-        conn.close()
+    usertype = getUserType(username)
+    if usertype == "moderator":
+        if command is not None and response is not None:
+            cursor, conn = databaseConnect()
+            SQL = "INSERT INTO commands VALUES (%s, %s);"
+            data = (command, response)
+            cursor.execute(SQL, data)
+            conn.commit()
+            cursor.close()
+            conn.close()
+        else:
+            log("Attempting to add a new command to the db, but command or response was empty", 7)
+            print("You sucked at adding a message")
+            chat(sock, "Adding a command requires a command and response")
     else:
-        log("Attempting to add a new command to the db, but command or response was empty", 7)
-        print("You sucked at adding a message")
-        chat(sock, "Adding a command requires a command and response")
+        log("User: " + str(username) + " attempted to add a command, but the user is not a moderator")
+        chat(sock, "@" + str(username) + " you must be a moderator to add a command")
 
 def getCommands():
     """
@@ -214,8 +237,10 @@ def getCommand(command):
         data = (command,)
         cursor.execute(SQL, data)
         conn.commit()
+        response = cursor.fetchone()
         cursor.close()
         conn.close()
+        return response[0]
     except Exception as e:
         log(message="Problem encountered while pulling command from the database: " + str(e), idNum=8)
 
@@ -243,6 +268,11 @@ def pullUsers():
                 chattersAdmins.extend(response["chatters"]["admins"])
                 chattersGlobalMods.extend(response["chatters"]["global_mods"])
                 chattersViewers.extend(response["chatters"]["viewers"])
+                print("Mods: " + str(chattersMods))
+                print("staff: " + str(chattersStaff))
+                print("admins: " + str(chattersAdmins))
+                print("globalmods: " + str(chattersGlobalMods))
+                print("viewers: " + str(chattersViewers))
                 
                 cursor, conn = databaseConnect()
                 cursor.execute("SELECT (username) FROM users;")
