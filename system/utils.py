@@ -12,7 +12,7 @@ from time import sleep
 import psycopg2
 import urllib3
 
-from cfg import cfg
+import cfg
 
 
 def chat(sock, msg):
@@ -62,6 +62,7 @@ def twitchConnect():
     s.send("PASS {}\r\n".format(cfg.PASS).encode('utf-8'))
     s.send("NICK {}\r\n".format(cfg.NICK).encode('utf-8'))
     s.send("JOIN {}\r\n".format(cfg.CHAN).encode('utf-8'))
+#     s.send("CAP REQ :twitch.tv/tags\r\n".encode('utf-8'))
     
     chat(s, "AuxBot joined chat\r\n")
     return s
@@ -133,7 +134,8 @@ def autoPebblerUpdater():
     Automatically updates every user in the database that's viewing the stream every 10 minutes
     """
     while True:
-        sleep(cfg.AUTO_UPDATE_INTERVAL)
+#         sleep(cfg.AUTO_UPDATE_INTERVAL)
+        sleep(30)
         http = urllib3.PoolManager()
         streamWatchers = []
         try:
@@ -153,12 +155,25 @@ def autoPebblerUpdater():
                         SQL = "UPDATE users SET pebbles = pebbles + 5 WHERE username = %s;"
                         data = (watcher,)
                         cursor.execute(SQL, data)
+                        print("Updated " + str(watcher) + "'s pebbles")
                 conn.commit()
                 cursor.close()
                 conn.close()
                 log(message="Completed auto updating pebbles", idNum=5)
         except Exception as e:
             log(message="Exception attempting to connect to twitch chatter service, " + str(e), idNum=4)
+
+def getUserPebbles(username):
+    """
+    Get the number of pebbles a user has
+    username -- The user to get pebbles of
+    """
+    cursor, conn = databaseConnect()
+    cursor.execute("SELECT (pebbles) FROM users where username = '" + username + "';")
+    pebbles = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return pebbles[0]
 
 def addPebbles(numPebbles, username=None):
     """
@@ -169,13 +184,38 @@ def addPebbles(numPebbles, username=None):
     if numPebbles < 0:
         log(message="A request to add pebbles came in, but had negative pebbles", idNum=4)
     else:
+        try:
+            cursor, conn = databaseConnect()
+            if username is not None:
+                SQL = "UPDATE users SET pebbles = pebbles + %s WHERE username = %s;"
+                data = (numPebbles, username)
+                cursor.execute(SQL, data)
+                conn.commit()
+                cursor.close()
+                conn.close()
+    
+            else:
+                SQL = "UPDATE users SET pebbles = pebbles + %s"
+                data = (numPebbles,)
+                cursor.execute(SQL, data)
+                conn.commit()
+                cursor.close()
+                conn.close()
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(error)
+
+def subtractPebbles(numPebbles, username):
+    """
+    Removes pebbles from a user
+    numPebbles -- The number of pebbles to remove from the user
+    username -- The user to remove the pebbles from
+    """
+    if numPebbles < 0:
+        log(message="A request to remove pebbles came in from " + username + ", but had negative pebbles", idNum=4)
+    else:
         cursor, conn = databaseConnect()
-        if username is not None:
-            SQL = "UPDATE users SET pebbles = pebbles + %s WHERE username = %s;"
-            data = (numPebbles, username)
-        else:
-            SQL = "UPDATE users SET pebbles = pebbles + %s"
-            data = (numPebbles,)
+        SQL = "UPDATE users SET pebbles = pebbles - %s WHERE username = %s;"
+        data = (numPebbles, username)
         cursor.execute(SQL, data)
         conn.commit()
         cursor.close()
@@ -244,6 +284,23 @@ def getCommand(command):
     except Exception as e:
         log(message="Problem encountered while pulling command from the database: " + str(e), idNum=8)
 
+def userExists(username):
+    """
+    Checks the database to see if a user exists
+    username -- The user to check existence of
+    """
+    try:
+        cursor, conn = databaseConnect()
+        SQL = ("SELECT COUNT(*) FROM users WHERE username = %s")
+        data = (username,)
+        cursor.execute(SQL, data)
+        count = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return count[0] > 0
+    except Exception as e:
+        log(message="Problem encountered while checking if user exists in the database: " + str(e), idNum=8)
+
 def pullUsers():
     """
     Pulls the currently watching users and adds them to the database if they aren't there
@@ -260,7 +317,7 @@ def pullUsers():
         try:
             req = http.request('GET', cfg.CHATTERS_URL)
             if req.status is not 200:
-                log(message="Error connecting to twitch chatter service", idNum=3)
+                log(message="Error connecting to twitch chatter service, status code is: " + str(req.status), idNum=3)
             else:
                 response = json.loads(req.data)
                 chattersMods.extend(response["chatters"]["moderators"])
@@ -268,11 +325,6 @@ def pullUsers():
                 chattersAdmins.extend(response["chatters"]["admins"])
                 chattersGlobalMods.extend(response["chatters"]["global_mods"])
                 chattersViewers.extend(response["chatters"]["viewers"])
-                print("Mods: " + str(chattersMods))
-                print("staff: " + str(chattersStaff))
-                print("admins: " + str(chattersAdmins))
-                print("globalmods: " + str(chattersGlobalMods))
-                print("viewers: " + str(chattersViewers))
                 
                 cursor, conn = databaseConnect()
                 cursor.execute("SELECT (username) FROM users;")
@@ -289,39 +341,39 @@ def pullUsers():
                         log(message="Adding user: " + lowerCaseMod + " to users db", idNum=2)
                         addUser(lowerCaseMod, "moderator")
                     else:
-                        print("Found: " + lowerCaseMod + " in parsedDbUsers")
+                        print("Found: " + lowerCaseMod + " in parsedDbUsers, so won't insert into database")
     
                 for staff in chattersStaff:
                     lowerCaseStaff = staff.lower()
                     if lowerCaseStaff not in parsedDbUsers and lowerCaseStaff != cfg.NICK:
                         log(message="Adding user: " + lowerCaseStaff + " to users db", idNum=2)
-                        addUser(lowerCaseStaff, "moderator")
+                        addUser(lowerCaseStaff, "staff")
                     else:
-                        print("Found: " + lowerCaseStaff + " in parsedDbUsers")
+                        print("Found: " + lowerCaseStaff + " in parsedDbUsers, so won't insert into database")
     
                 for admin in chattersAdmins:
                     lowerCaseAdmin = admin.lower()
                     if lowerCaseAdmin not in parsedDbUsers and lowerCaseAdmin != cfg.NICK:
                         log(message="Adding user: " + lowerCaseAdmin + " to users db", idNum=2)
-                        addUser(lowerCaseAdmin, "moderator")
+                        addUser(lowerCaseAdmin, "admin")
                     else:
-                        print("Found: " + lowerCaseAdmin + " in parsedDbUsers")
+                        print("Found: " + lowerCaseAdmin + " in parsedDbUsers, so won't insert into database")
     
                 for globalMod in chattersGlobalMods:
                     lowerCaseGlobalMod = globalMod.lower()
                     if lowerCaseGlobalMod not in parsedDbUsers and lowerCaseGlobalMod != cfg.NICK:
                         log(message="Adding user: " + lowerCaseGlobalMod + " to users db", idNum=2)
-                        addUser(lowerCaseGlobalMod, "moderator")
+                        addUser(lowerCaseGlobalMod, "globalmoderator")
                     else:
-                        print("Found: " + lowerCaseGlobalMod + " in parsedDbUsers")
+                        print("Found: " + lowerCaseGlobalMod + " in parsedDbUsers, so won't insert into database")
     
                 for viewer in chattersViewers:
                     lowerCaseViewer = viewer.lower()
                     if lowerCaseViewer not in parsedDbUsers and lowerCaseViewer != cfg.NICK:
                         log(message="Adding user: " + lowerCaseViewer + " to users db", idNum=2)
-                        addUser(lowerCaseViewer, "moderator")
+                        addUser(lowerCaseViewer, "viewer")
                     else:
-                        print("Found: " + lowerCaseViewer + " in parsedDbUsers")
+                        print("Found: " + lowerCaseViewer + " in parsedDbUsers, so won't insert into database")
     
         except Exception as e:
             log(message="Exception encountered while pulling users, " + str(e), idNum=6)
