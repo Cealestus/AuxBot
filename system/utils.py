@@ -5,6 +5,7 @@ Created on Nov 10, 2017
 '''
 
 import json
+from random import randint
 import socket
 from threading import Thread
 from time import sleep
@@ -43,14 +44,18 @@ def timeout(sock, user, secs=600):
     """
     chat(sock, ".timeout {}".format(user, secs))
 
-def startupThreads():
+def startupThreads(twitchSocket):
     """
     Starts the bot's threads for regular operation
     """
     thread_pullUsers = Thread(target=pullUsers)
     thread_pullUsers.start()
+
     thread_autoPebblerUpdater = Thread(target=autoPebblerUpdater)
     thread_autoPebblerUpdater.start()
+
+    thread_rotatingMessages = Thread(target=chatRotatingMessages, args=(twitchSocket,))
+    thread_rotatingMessages.start()
 
 def twitchConnect():
     """
@@ -221,69 +226,6 @@ def subtractPebbles(numPebbles, username):
         cursor.close()
         conn.close()
 
-def addCommand(sock, command, response, username):
-    """
-    Adds a custom command to the bot. Acts like a quote echo
-    command -- The phrase to trigger the command
-    response -- The string containing the response the bot will send
-    """
-    usertype = getUserType(username)
-    if usertype == "moderator":
-        if command is not None and response is not None:
-            cursor, conn = databaseConnect()
-            SQL = "INSERT INTO commands VALUES (%s, %s);"
-            data = (command, response)
-            cursor.execute(SQL, data)
-            conn.commit()
-            cursor.close()
-            conn.close()
-        else:
-            log("Attempting to add a new command to the db, but command or response was empty", 7)
-            print("You sucked at adding a message")
-            chat(sock, "Adding a command requires a command and response")
-    else:
-        log("User: " + str(username) + " attempted to add a command, but the user is not a moderator")
-        chat(sock, "@" + str(username) + " you must be a moderator to add a command")
-
-def getCommands():
-    """
-    Gets all the current custom commands from the db.
-    """
-    parsedDbCommands = []
-
-    try:
-        cursor, conn = databaseConnect()
-        cursor.execute("SELECT (command) FROM commands;")
-        dbCommands = cursor.fetchall()
-        cursor.close()
-        conn.close()
-
-        for entry in dbCommands:
-            parsedDbCommands.extend(entry)
-
-        return parsedDbCommands
-    except Exception as e:
-        log(message="Problem encountered while pulling commands from the database: " + str(e), idNum=7)
-
-def getCommand(command):
-    """
-    Gets a specific command with a given command string
-    command -- The string containing the command to get from the database
-    """
-    
-    try:
-        cursor, conn = databaseConnect()
-        SQL = "SELECT (response) FROM commands WHERE command = %s;"
-        data = (command,)
-        cursor.execute(SQL, data)
-        conn.commit()
-        response = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        return response[0]
-    except Exception as e:
-        log(message="Problem encountered while pulling command from the database: " + str(e), idNum=8)
-
 def userExists(username):
     """
     Checks the database to see if a user exists
@@ -378,3 +320,27 @@ def pullUsers():
         except Exception as e:
             log(message="Exception encountered while pulling users, " + str(e), idNum=6)
         sleep(60)
+
+def chatRotatingMessages(twitchSocket):
+    """
+    Method to display a "helpful" message to the chat. Chats a predefined message from the database every preset amount of time
+    twitchSocket -- The socket to send the messages over
+    """
+    while True:
+        sleep(cfg.ROTATE_MSG_RATE)
+        print("About to chat rotating messages")
+        cursor, conn = databaseConnect()
+        cursor.execute("SELECT max(id) FROM rotatingmessages;")
+        maxId = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        selectedId = randint(1, maxId)
+        
+        cursor, conn = databaseConnect()
+        SQL = "SELECT saying FROM rotatingmessages WHERE id = %s;"
+        data = (selectedId,)
+        cursor.execute(SQL, data)
+        saying = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        chat(twitchSocket, str(saying))

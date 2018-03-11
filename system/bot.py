@@ -6,7 +6,7 @@ Created on Oct 28, 2017
 import re
 from time import sleep
 
-from botFuncs import givePoints
+from botFuncs import givePoints, getPoints, songRequest
 import cfg
 from utils import chat, twitchConnect, log, startupThreads, addCommand, getCommands, getCommand
 
@@ -14,7 +14,7 @@ from utils import chat, twitchConnect, log, startupThreads, addCommand, getComma
 CHAT_MSG = re.compile(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv PRIVMSG #\w+ :")
 
 twitchSocket = twitchConnect()
-startupThreads()
+startupThreads(twitchSocket)
 log(message="AuxBot started successfully", idNum=0)
 
 while True:
@@ -30,6 +30,10 @@ while True:
         if parsedMessage[0][0] == '!':
             if parsedMessage[0] == "!givepoints":
                 givePoints(parsedMessage[1], username, parsedMessage[2], twitchSocket)
+            elif parsedMessage[0] == "!greglespebbles":
+                getPoints(username=username, twitchSocket=twitchSocket)
+            elif parsedMessage[0] == "!bangthatdrum" or parsedMessage[0] == "!sr":
+                songRequest(username=username, twitchSocket=twitchSocket)
             elif parsedMessage[0] == "!command":
                 if parsedMessage[1] == "add":
                     addCommand(twitchSocket, parsedMessage[2], ' '.join(parsedMessage[3:]), username=username)
