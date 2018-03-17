@@ -243,6 +243,24 @@ def userExists(username):
     except Exception as e:
         log(message="Problem encountered while checking if user exists in the database: " + str(e), idNum=8)
 
+def userHasRequest(username):
+    """
+    Checks the database to see if a user has requested a song already
+    username -- The user to check if they have a request
+    """
+    try:
+        cursor, conn = databaseConnect()
+        SQL = ("SELECT COUNT(*) FROM songrequests WHERE username = %s")
+        data = (username,)
+        cursor.execute(SQL, data)
+        count = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return count[0] > 0
+    except Exception as e:
+        log(message="Problem encountered while checking if user has request in the database: " + str(e), idNum=8)
+        
+
 def pullUsers():
     """
     Pulls the currently watching users and adds them to the database if they aren't there

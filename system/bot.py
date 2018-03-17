@@ -8,7 +8,7 @@ from time import sleep
 
 from botFuncs import givePoints, getPoints, songRequest
 import cfg
-from utils import chat, twitchConnect, log, startupThreads, addCommand, getCommands, getCommand
+from utils import twitchConnect, log, startupThreads
 
 
 CHAT_MSG = re.compile(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv PRIVMSG #\w+ :")
@@ -36,9 +36,11 @@ while True:
                 songRequest(username=username, twitchSocket=twitchSocket)
             elif parsedMessage[0] == "!command":
                 if parsedMessage[1] == "add":
-                    addCommand(twitchSocket, parsedMessage[2], ' '.join(parsedMessage[3:]), username=username)
+                    print("Add command")
+#                     addCommand(twitchSocket, parsedMessage[2], ' '.join(parsedMessage[3:]), username=username)
             else:
-                print(str(getCommands()))            
-                if parsedMessage[0][1:] in getCommands():
-                    chat(sock=twitchSocket, msg=getCommand(parsedMessage[0][1:]))
+                print("else")
+#                 print(str(getCommands()))            
+#                 if parsedMessage[0][1:] in getCommands():
+#                     chat(sock=twitchSocket, msg=getCommand(parsedMessage[0][1:]))
     sleep(1 / cfg.RATE)
